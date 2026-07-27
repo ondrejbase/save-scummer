@@ -20,23 +20,17 @@ This Node.js script acts as a wrapper for your games. It launches the game, auto
    git clone git@github.com:ondrejbase/save-scummer.git
    cd save-scummer
    ```
+2. Create your configuration file by copying the provided template:
+   ```bash
+   cp config.env.example config.env
+   ```
 
-2. Create a `config.env` file in the root directory. Here is an example configuration:
-
+3. Open the newly created `config.env` file in a text editor and adjust the variables to match your specific setup:
    ```env
-   # The executable to launch
    GAME_EXECUTABLE="devilutionx" 
-   
-   # The save file you want to backup
    SOURCE_PATH="~/.local/share/diasurgical/devilution/single_0.sv"
-   
-   # Where the backups should be stored
    BACKUP_DIR="~/Games/Diablo/saves-backup"
-   
-   # Backup interval in milliseconds (e.g., 180000 = 3 minutes)
    BACKUP_INTERVAL_MS=180000
-   
-   # Maximum number of backups to keep
    MAX_BACKUPS=20
    ```
 
