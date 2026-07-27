@@ -1,9 +1,11 @@
 const { spawn } = require('child_process');
-const fs = require('fs');
+const fs = require('fs/promises');
+const { constants } = require('fs');
 const path = require('path');
+const os = require('os');
 const { loadEnvFile } = require('node:process');
 
-// 1. Load environment variables
+// 1. Safely load the configuration
 try {
     loadEnvFile(path.join(__dirname, 'config.env'));
 } catch (err) {
@@ -11,7 +13,16 @@ try {
     process.exit(1);
 }
 
-// 2. Validate and parse environment variables
+// 2. Helper function to safely resolve paths (including '~' home directory expansion)
+const resolvePath = (p) => {
+    if (!p) return '';
+    if (p.startsWith('~/') || p === '~') {
+        return path.join(os.homedir(), p.slice(1));
+    }
+    return path.resolve(p);
+};
+
+// 3. Environment validation and configuration mapping
 const requiredVars = [
     'BACKUP_DIR', 
     'BACKUP_INTERVAL_MS', 
@@ -28,15 +39,15 @@ if (missingVars.length > 0) {
 }
 
 const config = {
-    backupDir: process.env.BACKUP_DIR,
+    backupDir: resolvePath(process.env.BACKUP_DIR),
+    sourcePath: resolvePath(process.env.SOURCE_PATH),
+    gameExecutable: resolvePath(process.env.GAME_EXECUTABLE),
     backupIntervalMs: parseInt(process.env.BACKUP_INTERVAL_MS, 10),
-    gameExecutable: process.env.GAME_EXECUTABLE,
     maxBackups: parseInt(process.env.MAX_BACKUPS, 10),
-    sourcePath: process.env.SOURCE_PATH,
-    saveBasename: path.basename(process.env.SOURCE_PATH, '.sv')
+    saveBasename: path.basename(process.env.SOURCE_PATH, path.extname(process.env.SOURCE_PATH)),
+    saveExtension: path.extname(process.env.SOURCE_PATH)
 };
 
-// Validate numeric constraints
 if (isNaN(config.backupIntervalMs) || config.backupIntervalMs <= 0) {
     console.error(`[Error] BACKUP_INTERVAL_MS must be a positive integer.`);
     process.exit(1);
@@ -47,92 +58,125 @@ if (isNaN(config.maxBackups) || config.maxBackups <= 0) {
     process.exit(1);
 }
 
-// 3. Helper function: Generate a readable local timestamp (e.g., 2026-07-14_15-41-25)
-function getLocalTimestamp() {
+// 4. Timestamp formatting
+const getLocalTimestamp = () => {
     const now = new Date();
-    const pad = (num) => num.toString().padStart(2, '0');
+    const pad = (num) => String(num).padStart(2, '0');
     
     const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     const time = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
     
     return `${date}_${time}`;
-}
+};
 
-// 4. Ensure the backup directory exists
-if (!fs.existsSync(config.backupDir)) {
-    fs.mkdirSync(config.backupDir, { recursive: true });
-}
-
-// 5. Function to handle the backup process
-function backupSaveFile() {
-    if (!fs.existsSync(config.sourcePath)) {
-        console.log(`[Backup] Source save file ${config.sourcePath} does not exist yet. Waiting...`);
-        return;
+// 5. Encapsulate backup logic within a class
+class BackupManager {
+    constructor(cfg) {
+        this.config = cfg;
+        this.intervalId = null;
     }
 
-    const timestamp = getLocalTimestamp();
-    const backupFileName = `${config.saveBasename}_${timestamp}.sv`;
-    const backupFilePath = path.join(config.backupDir, backupFileName);
-
-    try {
-        fs.copyFileSync(config.sourcePath, backupFilePath);
-        console.log(`[Backup] Successfully created: ${backupFileName}`);
-    } catch (err) {
-        console.error(`[Backup] Failed to create backup: ${err.message}`);
-        return;
+    async init() {
+        try {
+            await fs.mkdir(this.config.backupDir, { recursive: true });
+        } catch (err) {
+            console.error(`[Error] Failed to create backup directory: ${err.message}`);
+            process.exit(1);
+        }
     }
 
-    cleanOldBackups();
-}
-
-// 6. Function to maintain only the latest N backups
-function cleanOldBackups() {
-    const files = fs.readdirSync(config.backupDir)
-        .filter(file => file.startsWith(`${config.saveBasename}_`) && file.endsWith('.sv'))
-        .map(file => {
-            const filePath = path.join(config.backupDir, file);
-            return {
-                name: file,
-                path: filePath,
-                time: fs.statSync(filePath).mtime.getTime() 
-            };
-        })
-        .sort((a, b) => b.time - a.time); // Sort descending (newest first)
-
-    // Remove older files if we exceed the limit
-    if (files.length > config.maxBackups) {
-        const filesToDelete = files.slice(config.maxBackups);
-        filesToDelete.forEach(file => {
+    async backup() {
+        try {
+            // Asynchronous and more efficient file existence check
             try {
-                fs.unlinkSync(file.path);
-                console.log(`[Cleanup] Deleted old backup: ${file.name}`);
-            } catch (err) {
-                console.error(`[Cleanup] Failed to delete ${file.name}: ${err.message}`);
+                await fs.access(this.config.sourcePath, constants.F_OK);
+            } catch {
+                console.log(`[Backup] Source save file ${this.config.sourcePath} does not exist yet. Waiting...`);
+                return;
             }
-        });
+
+            const timestamp = getLocalTimestamp();
+            const backupFileName = `${this.config.saveBasename}_${timestamp}${this.config.saveExtension}`;
+            const backupFilePath = path.join(this.config.backupDir, backupFileName);
+
+            await fs.copyFile(this.config.sourcePath, backupFilePath);
+            console.log(`[Backup] Successfully created: ${backupFileName}`);
+            
+            await this.cleanOldBackups();
+        } catch (err) {
+            console.error(`[Backup] Failed to create backup: ${err.message}`);
+        }
+    }
+
+    async cleanOldBackups() {
+        try {
+            const files = await fs.readdir(this.config.backupDir);
+            
+            const backupFiles = files
+                .filter(f => f.startsWith(`${this.config.saveBasename}_`) && f.endsWith(this.config.saveExtension))
+                // The timestamp in the filename ensures lexicographical sorting matches creation time sorting.
+                // This saves I/O operations as we don't need to call fs.stat().
+                .sort()
+                .reverse(); // Newest first
+
+            if (backupFiles.length > this.config.maxBackups) {
+                const filesToDelete = backupFiles.slice(this.config.maxBackups);
+                
+                // Delete surplus backups concurrently
+                await Promise.all(filesToDelete.map(async (file) => {
+                    try {
+                        await fs.unlink(path.join(this.config.backupDir, file));
+                        console.log(`[Cleanup] Deleted old backup: ${file}`);
+                    } catch (err) {
+                        console.error(`[Cleanup] Failed to delete ${file}: ${err.message}`);
+                    }
+                }));
+            }
+        } catch (err) {
+            console.error(`[Cleanup] Failed to read directory: ${err.message}`);
+        }
+    }
+
+    start() {
+        this.backup(); // Trigger the first backup immediately
+        this.intervalId = setInterval(() => this.backup(), this.config.backupIntervalMs);
+    }
+
+    stop() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId);
+            this.intervalId = null;
+        }
     }
 }
 
-// 7. Start the game process
-console.log(`[System] Launching ${config.gameExecutable}...`);
-const gameProcess = spawn(config.gameExecutable, [], { stdio: 'inherit' });
+// 6. Asynchronous main entry point
+async function main() {
+    const backupManager = new BackupManager(config);
+    await backupManager.init();
 
-// Create the first backup immediately upon script launch
-backupSaveFile();
+    console.log(`[System] Launching ${config.gameExecutable}...`);
+    const gameProcess = spawn(config.gameExecutable, [], { stdio: 'inherit' });
 
-// Set up the recurring backup interval
-const backupInterval = setInterval(backupSaveFile, config.backupIntervalMs);
+    backupManager.start();
 
-// 8. Handle game exit or launch errors
-gameProcess.on('close', (code) => {
-    console.log(`[System] ${config.gameExecutable} has closed (Code: ${code}). Stopping backups and exiting script.`);
-    clearInterval(backupInterval);
-    process.exit(0);
-});
+    gameProcess.on('close', (code) => {
+        console.log(`[System] Game closed (Code: ${code}). Stopping backups and exiting script.`);
+        backupManager.stop();
+        // Pass the game's exit code to the Node.js process
+        process.exit(code === null ? 0 : code);
+    });
 
-gameProcess.on('error', (err) => {
-    console.error(`[Error] Failed to launch the game. Please verify GAME_EXECUTABLE path.`);
-    console.error(`[Error] Details: ${err.message}`);
-    clearInterval(backupInterval);
+    gameProcess.on('error', (err) => {
+        console.error(`[Error] Failed to launch the game. Please verify GAME_EXECUTABLE path.`);
+        console.error(`[Error] Details: ${err.message}`);
+        backupManager.stop();
+        process.exit(1);
+    });
+}
+
+// Initialize the script with top-level error handling
+main().catch(err => {
+    console.error(`[Fatal] Unexpected system error: ${err.message}`);
     process.exit(1);
 });

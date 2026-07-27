@@ -29,12 +29,11 @@ This Node.js script acts as a wrapper for your games. It launches the game, auto
 3. Open the newly created `config.env` file in a text editor and adjust the variables to match your specific setup:
    ```env
    GAME_EXECUTABLE="devilutionx" 
-   SOURCE_PATH="/home/username/.local/share/diasurgical/devilution/single_0.sv"
-   BACKUP_DIR="/home/username/Games/Diablo/saves-backup"
+   SOURCE_PATH="~/.local/share/diasurgical/devilution/single_0.sv"
+   BACKUP_DIR="~/Games/Diablo/saves-backup"
    BACKUP_INTERVAL_MS=180000
    MAX_BACKUPS=20
    ```
-   *(Note: Ensure you use absolute paths, as relying on `~` for the home directory may cause resolution issues in Node.js).*
 
 ## Usage
 
