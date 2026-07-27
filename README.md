@@ -17,7 +17,7 @@ This Node.js script acts as a wrapper for your games. It launches the game, auto
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/ondrejbase/save-scummer.git
+   git clone git@github.com:ondrejbase/save-scummer.git
    cd save-scummer
    ```
 
