@@ -1,9 +1,9 @@
-const fs = require('fs/promises');
-const { constants } = require('fs');
-const path = require('path');
-const os = require('os');
+const fs = require('node:fs/promises');
+const { constants } = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
 const { loadEnvFile } = require('node:process');
-const readline = require('readline/promises'); // Using modern Promise API
+const readline = require('node:readline/promises'); // Using modern Promise API
 
 const MAX_DISPLAY_BACKUPS = 10;
 

@@ -1,8 +1,8 @@
-const { spawn } = require('child_process');
-const fs = require('fs/promises');
-const { constants } = require('fs');
-const path = require('path');
-const os = require('os');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs/promises');
+const { constants } = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
 const { loadEnvFile } = require('node:process');
 
 // 1. Safely load the configuration
