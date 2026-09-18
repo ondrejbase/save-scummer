@@ -38,14 +38,18 @@ if (missingVars.length > 0) {
     process.exit(1);
 }
 
+function expandEnvVars(pathStr) {
+    return pathStr.replace(/%([^%]+)%/g, (_, name) => process.env[name] || '');
+}
+
 const config = {
-    backupDir: resolvePath(process.env.BACKUP_DIR),
-    sourcePath: resolvePath(process.env.SOURCE_PATH),
-    gameExecutable: resolvePath(process.env.GAME_EXECUTABLE),
+    backupDir: resolvePath(expandEnvVars(process.env.BACKUP_DIR)),
+    sourcePath: resolvePath(expandEnvVars(process.env.SOURCE_PATH)),
+    gameExecutable: resolvePath(expandEnvVars(process.env.GAME_EXECUTABLE)),
     backupIntervalMs: parseInt(process.env.BACKUP_INTERVAL_MS, 10),
     maxBackups: parseInt(process.env.MAX_BACKUPS, 10),
-    saveBasename: path.basename(process.env.SOURCE_PATH, path.extname(process.env.SOURCE_PATH)),
-    saveExtension: path.extname(process.env.SOURCE_PATH)
+    saveBasename: path.basename(expandEnvVars(process.env.SOURCE_PATH), path.extname(expandEnvVars(process.env.SOURCE_PATH))),
+    saveExtension: path.extname(expandEnvVars(process.env.SOURCE_PATH))
 };
 
 if (isNaN(config.backupIntervalMs) || config.backupIntervalMs <= 0) {

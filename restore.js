@@ -34,12 +34,16 @@ if (missingVars.length > 0) {
     process.exit(1);
 }
 
+function expandEnvVars(pathStr) {
+    return pathStr.replace(/%([^%]+)%/g, (_, name) => process.env[name] || '');
+}
+
 const config = {
-    backupDir: resolvePath(process.env.BACKUP_DIR),
+    backupDir: resolvePath(expandEnvVars(process.env.BACKUP_DIR)),
     maxBackups: parseInt(process.env.MAX_BACKUPS, 10),
-    sourcePath: resolvePath(process.env.SOURCE_PATH),
-    saveBasename: path.basename(process.env.SOURCE_PATH, path.extname(process.env.SOURCE_PATH)),
-    saveExtension: path.extname(process.env.SOURCE_PATH)
+    sourcePath: resolvePath(expandEnvVars(process.env.SOURCE_PATH)),
+    saveBasename: path.basename(expandEnvVars(process.env.SOURCE_PATH), path.extname(expandEnvVars(process.env.SOURCE_PATH))),
+    saveExtension: path.extname(expandEnvVars(process.env.SOURCE_PATH))
 };
 
 if (isNaN(config.maxBackups) || config.maxBackups <= 0) {
